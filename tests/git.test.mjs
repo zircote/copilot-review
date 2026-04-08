@@ -240,7 +240,7 @@ describe("git.mjs", () => {
 				assert.equal(typeof diff, "string");
 				assert.ok(diff.length > 0, "PR diff should be non-empty");
 			} catch (err) {
-				if (err.message.includes("ENOENT")) {
+				if (err.code === "ENOENT") {
 					// gh CLI not installed — skip
 					return;
 				}
@@ -254,7 +254,7 @@ describe("git.mjs", () => {
 				await getPrDiff(ref);
 				assert.fail("Expected an error for non-existent PR");
 			} catch (err) {
-				if (err.message.includes("ENOENT")) return; // gh CLI not installed
+				if (err.code === "ENOENT") return; // gh CLI not installed
 				assert.ok(
 					err.message.includes("404") || err.stderr?.includes("404") || err.code !== 0,
 					"should fail with a not-found error",

@@ -78,12 +78,14 @@ export async function getGitRoot() {
 /**
  * Collect the raw git diff without truncation.
  *
- * Modes (checked in order):
+ * Modes (checked in priority order — first match wins, others are ignored):
  *  1. `range`           → parsed DiffRange (from parseDiffRange), uses .. or ... as appropriate
  *  2. `base` + `head`   → `git diff <base>...<head>`  (three-dot merge-base diff)
  *  3. `base` only       → `git diff <base>...HEAD`
  *  4. `staged`          → `git diff --staged`
  *  5. default            → `git diff` (working-tree changes)
+ *
+ * When `range` is set, `base`, `head`, and `staged` are all ignored.
  *
  * @param {object} [options]
  * @param {boolean} [options.staged=false] - If true, diff only staged changes.
@@ -319,22 +321,19 @@ export function parsePrRef(ref) {
  * @throws {Error} If `gh` CLI is unavailable or the request fails.
  */
 export async function getPrDiff(prRef) {
-	const owner = prRef.owner;
-	const repo = prRef.repo;
-	let resolvedOwner = owner;
-	let resolvedRepo = repo;
+	let { owner, repo } = prRef;
 
-	if (!resolvedOwner || !resolvedRepo) {
+	if (!owner || !repo) {
 		const remote = await getRemoteInfo();
-		resolvedOwner = resolvedOwner || remote.owner;
-		resolvedRepo = resolvedRepo || remote.repo;
+		owner = owner || remote.owner;
+		repo = repo || remote.repo;
 	}
 
 	const { stdout } = await execFile(
 		"gh",
 		[
 			"api",
-			`repos/${resolvedOwner}/${resolvedRepo}/pulls/${prRef.number}`,
+			`repos/${owner}/${repo}/pulls/${prRef.number}`,
 			"-H",
 			"Accept: application/vnd.github.diff",
 		],

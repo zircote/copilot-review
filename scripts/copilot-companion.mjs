@@ -5,6 +5,8 @@
  * Invoked by Claude Code command .md files.
  */
 
+import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "./lib/args.mjs";
 import { AuthError, CopilotReviewClient, resolveToken } from "./lib/copilot-client.mjs";
 import {
@@ -19,7 +21,7 @@ import {
 import { renderError, renderJobList, renderJobResult, renderReview } from "./lib/render.mjs";
 import { runChunkedReview, runReview } from "./lib/review.mjs";
 import { SessionManager } from "./lib/session-manager.mjs";
-import { listJobs, readJob } from "./lib/state.mjs";
+import { listJobs, readJob, writeJob } from "./lib/state.mjs";
 
 // ---------------------------------------------------------------------------
 // Exit codes
@@ -34,12 +36,36 @@ const EXIT_PROSE_FALLBACK = 3;
 // Helpers
 // ---------------------------------------------------------------------------
 
+/** Absolute path to this script (for spawning background processes). */
+const __filename = fileURLToPath(import.meta.url);
+
 /**
  * Resolve the data directory for job persistence.
  * @returns {string}
  */
 function getDataDir() {
 	return process.env.CLAUDE_PLUGIN_DATA || "/tmp/copilot-review";
+}
+
+/**
+ * Spawn a detached background review process.
+ *
+ * Rebuilds the original argv, strips --background, adds --_bg-jobid <id>,
+ * and launches a detached child that writes results to the job store.
+ *
+ * @param {string} jobId - Pre-created job ID for tracking.
+ * @param {string[]} originalArgv - process.argv.slice(2) from the parent.
+ */
+function spawnBackground(jobId, originalArgv) {
+	const childArgs = originalArgv.filter((a) => a !== "--background");
+	childArgs.push("--_bg-jobid", jobId);
+
+	const child = spawn(process.execPath, [__filename, ...childArgs], {
+		detached: true,
+		stdio: "ignore",
+		env: { ...process.env },
+	});
+	child.unref();
 }
 
 /**
@@ -130,6 +156,29 @@ async function handleAdversarialReview(flags, positionals) {
  * @param {string[]} positionals
  */
 async function runReviewMode(mode, flags, positionals = []) {
+	const background = flags.background === true;
+	const bgJobId = typeof flags["_bg-jobid"] === "string" ? flags["_bg-jobid"] : null;
+
+	// --background: create a pending job, spawn detached child, exit immediately
+	if (background) {
+		const dataDir = getDataDir();
+		const jobId = `bg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+		await writeJob(dataDir, jobId, {
+			jobId,
+			type: "review",
+			mode,
+			status: "pending",
+			createdAt: new Date().toISOString(),
+			claudeSessionId: process.env.CLAUDE_SESSION_ID || null,
+		});
+
+		spawnBackground(jobId, process.argv.slice(2));
+		process.stdout.write(
+			`Background review started: ${jobId}\nCheck progress: /copilot-review:status\nGet results:   /copilot-review:result ${jobId}\n`,
+		);
+		process.exit(EXIT_OK);
+	}
+
 	const staged = flags.staged === true;
 	const files = typeof flags.files === "string" ? flags.files.split(",") : undefined;
 	const prFlag = typeof flags.pr === "string" ? flags.pr : null;
@@ -143,7 +192,7 @@ async function runReviewMode(mode, flags, positionals = []) {
 			rawDiff = await getPrDiff(prRef);
 		} catch (err) {
 			const msg = err.stderr || err.message || String(err);
-			if (msg.includes("ENOENT")) {
+			if (err.code === "ENOENT") {
 				process.stderr.write(
 					"gh CLI not found. Install from https://cli.github.com and run `gh auth login`.\n",
 				);
@@ -188,8 +237,29 @@ async function runReviewMode(mode, flags, positionals = []) {
 		}
 	}
 	if (!rawDiff) {
+		if (bgJobId) {
+			const dataDir = getDataDir();
+			const job = await readJob(dataDir, bgJobId);
+			if (job) {
+				job.status = "completed";
+				job.result = { summary: "No changes to review.", verdict: "approve", findings: [] };
+				job.completedAt = new Date().toISOString();
+				await writeJob(dataDir, bgJobId, job);
+			}
+			process.exit(EXIT_OK);
+		}
 		process.stdout.write("No changes to review.\n");
 		process.exit(EXIT_OK);
+	}
+
+	// Background mode: update job to running
+	if (bgJobId) {
+		const dataDir = getDataDir();
+		const job = await readJob(dataDir, bgJobId);
+		if (job) {
+			job.status = "running";
+			await writeJob(dataDir, bgJobId, job);
+		}
 	}
 
 	const client = await createClient();
@@ -203,20 +273,17 @@ async function runReviewMode(mode, flags, positionals = []) {
 			const fileDiffs = splitDiffByFile(rawDiff);
 			const chunks = groupIntoChunks(fileDiffs);
 
-			process.stderr.write(
-				`Diff is ${Math.round(Buffer.byteLength(rawDiff, "utf-8") / 1024)}KB — ` +
-					`reviewing in ${chunks.length} chunks (${fileDiffs.length} files).\n`,
-			);
-
 			result = await runChunkedReview({
 				client,
 				sessionManager,
 				chunks,
 				mode,
 				options: { claudeSessionId: process.env.CLAUDE_SESSION_ID },
-				onProgress: ({ chunk, total }) => {
-					process.stderr.write(`Reviewing chunk ${chunk}/${total}...\n`);
-				},
+				onProgress: bgJobId
+					? undefined
+					: ({ chunk, total }) => {
+							process.stderr.write(`Reviewing chunk ${chunk}/${total}...\n`);
+						},
 			});
 		} else {
 			// Small diff: single-shot review
@@ -229,12 +296,39 @@ async function runReviewMode(mode, flags, positionals = []) {
 			});
 		}
 
+		// Background mode: write result to job store and exit silently
+		if (bgJobId) {
+			const dataDir = getDataDir();
+			const job = await readJob(dataDir, bgJobId);
+			if (job) {
+				job.status = "completed";
+				job.result = result;
+				job.completedAt = new Date().toISOString();
+				await writeJob(dataDir, bgJobId, job);
+			}
+			process.exit(EXIT_OK);
+		}
+
 		process.stdout.write(`${renderReview(result)}\n`);
 
 		// Exit 3 if prose fallback was used
 		const isProseFallback =
 			result.summary?.includes("prose review") || result.summary?.includes("JSON parsing failed");
 		process.exit(isProseFallback ? EXIT_PROSE_FALLBACK : EXIT_OK);
+	} catch (err) {
+		// Background mode: write error to job store
+		if (bgJobId) {
+			const dataDir = getDataDir();
+			const job = await readJob(dataDir, bgJobId);
+			if (job) {
+				job.status = "failed";
+				job.error = err.message;
+				job.completedAt = new Date().toISOString();
+				await writeJob(dataDir, bgJobId, job);
+			}
+			process.exit(EXIT_SDK_ERROR);
+		}
+		throw err;
 	} finally {
 		await client.stop();
 	}
@@ -355,7 +449,8 @@ async function main() {
 				"  --staged             Review only staged changes\n" +
 				"  --base <ref>         Base ref for cold review (tag, branch, SHA)\n" +
 				"  --head <ref>         Head ref (default: HEAD)\n" +
-				"  --files <glob,...>    Restrict to specific files\n\n" +
+				"  --files <glob,...>    Restrict to specific files\n" +
+				"  --background         Run review in the background (returns job ID)\n\n" +
 				"Examples:\n" +
 				"  /copilot-review:review --pr 42                 Review PR #42 in current repo\n" +
 				"  /copilot-review:review --pr owner/repo#42      Review PR #42 in owner/repo\n" +

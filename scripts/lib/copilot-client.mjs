@@ -102,10 +102,13 @@ export class CopilotReviewClient {
 	/** @type {string | undefined} Default model override */
 	#model;
 
+	/** @type {number} Timeout in ms for sendAndWait calls */
+	#sendTimeout;
+
 	/**
-	 * @param {{ token?: string, model?: string }} opts
+	 * @param {{ token?: string, model?: string, sendTimeout?: number }} opts
 	 */
-	constructor({ token, model } = {}) {
+	constructor({ token, model, sendTimeout } = {}) {
 		this.#token = token ?? resolveToken();
 		if (!this.#token) {
 			throw new AuthError(
@@ -114,6 +117,7 @@ export class CopilotReviewClient {
 			);
 		}
 		this.#model = model;
+		this.#sendTimeout = sendTimeout ?? 300_000; // 5 minutes
 	}
 
 	/**
@@ -220,7 +224,7 @@ export class CopilotReviewClient {
 					mimeType: att.mimeType ?? "text/plain",
 				}));
 			}
-			const response = await session.sendAndWait(sendOpts);
+			const response = await session.sendAndWait(sendOpts, this.#sendTimeout);
 			this.#failures.set(sessionId, 0);
 			return this.#extractText(response);
 		} catch (err) {
@@ -254,7 +258,7 @@ export class CopilotReviewClient {
 					mimeType: att.mimeType ?? "text/plain",
 				}));
 			}
-			const response = await session.sendAndWait(sendOpts);
+			const response = await session.sendAndWait(sendOpts, this.#sendTimeout);
 			this.#failures.set(sessionId, 0);
 			return this.#extractText(response);
 		} catch (err) {
