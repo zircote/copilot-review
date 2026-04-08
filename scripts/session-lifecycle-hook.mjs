@@ -45,12 +45,12 @@ function parseContext(raw) {
 function handleStart(ctx) {
 	const token = resolveToken();
 	if (token) {
-		const maskedToken = token.slice(0, 4) + "..." + token.slice(-4);
+		const maskedToken = `${token.slice(0, 4)}...${token.slice(-4)}`;
 		process.stdout.write(
-			JSON.stringify({
+			`${JSON.stringify({
 				message: `copilot-review: auth OK (token: ${maskedToken})`,
 				session_id: ctx.session_id ?? null,
-			}) + "\n",
+			})}\n`,
 		);
 	} else {
 		process.stderr.write(
@@ -67,10 +67,10 @@ function handleStart(ctx) {
  */
 function handleEnd(ctx) {
 	process.stdout.write(
-		JSON.stringify({
+		`${JSON.stringify({
 			message: "copilot-review: session cleanup complete",
 			session_id: ctx.session_id ?? null,
-		}) + "\n",
+		})}\n`,
 	);
 }
 

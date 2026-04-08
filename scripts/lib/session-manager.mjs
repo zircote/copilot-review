@@ -48,7 +48,7 @@ const VALID_TRANSITIONS = {
  */
 function assertTransition(from, to) {
 	const allowed = VALID_TRANSITIONS[from];
-	if (!allowed || !allowed.includes(to)) {
+	if (!allowed?.includes(to)) {
 		throw new Error(`Invalid state transition: ${from} -> ${to}`);
 	}
 }

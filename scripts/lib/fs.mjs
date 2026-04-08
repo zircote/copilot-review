@@ -43,7 +43,7 @@ export async function readJSON(filePath) {
  */
 export async function writeJSON(filePath, data) {
 	await ensureDir(dirname(filePath));
-	await writeFile(filePath, JSON.stringify(data, null, 2) + "\n", "utf-8");
+	await writeFile(filePath, `${JSON.stringify(data, null, 2)}\n`, "utf-8");
 }
 
 /**
