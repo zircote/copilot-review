@@ -7,9 +7,9 @@
 
 import { parseArgs } from "./lib/args.mjs";
 import { AuthError, CopilotReviewClient, resolveToken } from "./lib/copilot-client.mjs";
-import { getDiff } from "./lib/git.mjs";
+import { getRawDiff, groupIntoChunks, needsChunking, splitDiffByFile } from "./lib/git.mjs";
 import { renderError, renderJobList, renderJobResult, renderReview } from "./lib/render.mjs";
-import { runReview } from "./lib/review.mjs";
+import { runChunkedReview, runReview } from "./lib/review.mjs";
 import { SessionManager } from "./lib/session-manager.mjs";
 import { listJobs, readJob } from "./lib/state.mjs";
 
@@ -86,7 +86,7 @@ async function handleSetup(_flags) {
 		process.exit(EXIT_USER_ERROR);
 	}
 
-	const masked = token.slice(0, 4) + "..." + token.slice(-4);
+	const masked = `${token.slice(0, 4)}...${token.slice(-4)}`;
 	process.stdout.write(`Authentication: OK (token: ${masked})\n`);
 
 	try {
@@ -124,8 +124,9 @@ async function runReviewMode(mode, flags) {
 	const staged = flags.staged === true;
 	const files = typeof flags.files === "string" ? flags.files.split(",") : undefined;
 
-	const diff = await getDiff({ staged, files });
-	if (!diff) {
+	// Get the full diff first to check size
+	const rawDiff = await getRawDiff({ staged, files });
+	if (!rawDiff) {
 		process.stdout.write("No changes to review.\n");
 		process.exit(EXIT_OK);
 	}
@@ -134,15 +135,40 @@ async function runReviewMode(mode, flags) {
 	const sessionManager = createSessionManager(client);
 
 	try {
-		const result = await runReview({
-			client,
-			sessionManager,
-			diff,
-			mode,
-			options: { claudeSessionId: process.env.CLAUDE_SESSION_ID },
-		});
+		let result;
 
-		process.stdout.write(renderReview(result) + "\n");
+		if (needsChunking(rawDiff)) {
+			// Large diff: split by file and review in chunks
+			const fileDiffs = splitDiffByFile(rawDiff);
+			const chunks = groupIntoChunks(fileDiffs);
+
+			process.stderr.write(
+				`Diff is ${Math.round(Buffer.byteLength(rawDiff, "utf-8") / 1024)}KB — ` +
+					`reviewing in ${chunks.length} chunks (${fileDiffs.length} files).\n`,
+			);
+
+			result = await runChunkedReview({
+				client,
+				sessionManager,
+				chunks,
+				mode,
+				options: { claudeSessionId: process.env.CLAUDE_SESSION_ID },
+				onProgress: ({ chunk, total }) => {
+					process.stderr.write(`Reviewing chunk ${chunk}/${total}...\n`);
+				},
+			});
+		} else {
+			// Small diff: single-shot review
+			result = await runReview({
+				client,
+				sessionManager,
+				diff: rawDiff,
+				mode,
+				options: { claudeSessionId: process.env.CLAUDE_SESSION_ID },
+			});
+		}
+
+		process.stdout.write(`${renderReview(result)}\n`);
 
 		// Exit 3 if prose fallback was used
 		const isProseFallback =
@@ -157,7 +183,7 @@ async function runReviewMode(mode, flags) {
  * @param {Record<string, string|boolean>} flags
  * @param {string[]} positionals
  */
-async function handleTask(flags, positionals) {
+async function handleTask(_flags, positionals) {
 	const prompt = positionals.join(" ");
 	if (!prompt) {
 		process.stderr.write("Usage: copilot-companion task <prompt...>\n");
@@ -196,7 +222,7 @@ async function handleStatus(flags) {
 		jobs = jobs.filter((j) => j.claudeSessionId === process.env.CLAUDE_SESSION_ID);
 	}
 
-	process.stdout.write(renderJobList(jobs) + "\n");
+	process.stdout.write(`${renderJobList(jobs)}\n`);
 }
 
 /**
@@ -217,7 +243,7 @@ async function handleResult(_flags, positionals) {
 		process.exit(EXIT_USER_ERROR);
 	}
 
-	process.stdout.write(renderJobResult(job) + "\n");
+	process.stdout.write(`${renderJobResult(job)}\n`);
 }
 
 /**
@@ -283,6 +309,6 @@ main().catch((err) => {
 		process.exit(EXIT_USER_ERROR);
 	}
 
-	process.stderr.write(renderError(err) + "\n");
+	process.stderr.write(`${renderError(err)}\n`);
 	process.exit(EXIT_SDK_ERROR);
 });

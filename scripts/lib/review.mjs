@@ -199,6 +199,86 @@ function tryParseResponse(rawText) {
 	return /** @type {ReviewResult} */ (parsed);
 }
 
+/** Verdict severity ranking for merge (higher index = more severe). */
+const VERDICT_RANK = ["approve", "comment", "request_changes"];
+
+/**
+ * Merge multiple ReviewResult objects into one.
+ * Combines findings, picks the most severe verdict, joins summaries.
+ * @param {ReviewResult[]} results
+ * @returns {ReviewResult}
+ */
+export function mergeReviewResults(results) {
+	if (results.length === 0) {
+		return { summary: "No review results.", verdict: "approve", findings: [] };
+	}
+	if (results.length === 1) return results[0];
+
+	const allFindings = results.flatMap((r) => r.findings);
+
+	// Deduplicate findings with same file + line + message
+	const seen = new Set();
+	const dedupedFindings = [];
+	for (const f of allFindings) {
+		const key = `${f.file}:${f.line ?? ""}:${f.message}`;
+		if (!seen.has(key)) {
+			seen.add(key);
+			dedupedFindings.push(f);
+		}
+	}
+
+	// Pick the most severe verdict
+	let worstRank = 0;
+	for (const r of results) {
+		const rank = VERDICT_RANK.indexOf(r.verdict);
+		if (rank > worstRank) worstRank = rank;
+	}
+
+	// Join summaries (skip prose-fallback boilerplate)
+	const summaries = results
+		.map((r) => r.summary)
+		.filter((s) => !s.includes("prose review") && !s.includes("JSON parsing failed"));
+	const summary = summaries.length > 0 ? summaries.join(" | ") : results[0].summary;
+
+	return {
+		summary,
+		verdict: VERDICT_RANK[worstRank],
+		findings: dedupedFindings,
+	};
+}
+
+/**
+ * Send a single diff chunk for review and parse the response.
+ * @param {object} client - CopilotReviewClient instance.
+ * @param {string} sessionId
+ * @param {string} chunkDiff - The diff text for this chunk.
+ * @param {number} chunkIndex - 0-based chunk index.
+ * @param {number} totalChunks - Total number of chunks.
+ * @returns {Promise<ReviewResult>}
+ */
+async function reviewOneChunk(client, sessionId, chunkDiff, chunkIndex, totalChunks) {
+	const chunkLabel = `chunk ${chunkIndex + 1} of ${totalChunks}`;
+	const userPrompt = `Review the following diff (${chunkLabel}):\n\n\`\`\`diff\n${chunkDiff}\n\`\`\``;
+
+	const rawResponse = await client.send(sessionId, userPrompt);
+
+	// Layer 1: Extract JSON
+	let result = tryParseResponse(rawResponse);
+
+	// Layer 2: Retry
+	if (!result) {
+		const retryResponse = await client.send(sessionId, RETRY_PROMPT);
+		result = tryParseResponse(retryResponse);
+	}
+
+	// Layer 3: Prose fallback
+	if (!result) {
+		result = buildProseFallback(rawResponse);
+	}
+
+	return result;
+}
+
 /**
  * Run a code review via Copilot.
  *
@@ -215,7 +295,6 @@ export async function runReview({ client, sessionManager, diff, mode = "standard
 	const systemPrompt = await loadSystemPrompt(mode);
 
 	// 2. Create job record (SessionManager creates the Copilot session internally)
-	const jobType = mode === "adversarial" ? "adversarial-review" : "review";
 	const job = await sessionManager.createReviewSession({
 		systemMessage: systemPrompt,
 		claudeSessionId: options.claudeSessionId,
@@ -228,7 +307,7 @@ export async function runReview({ client, sessionManager, diff, mode = "standard
 		// 4. Build user prompt with inline diff
 		// Note: Blob attachments are not supported by the Copilot CLI runtime.
 		// The diff is inlined in the prompt text inside a code fence.
-		const userPrompt = "Review the following diff:\n\n```diff\n" + diff + "\n```";
+		const userPrompt = `Review the following diff:\n\n\`\`\`diff\n${diff}\n\`\`\``;
 
 		// 5. Send to Copilot (Layer 1 attempt)
 		const rawResponse = await client.send(job.sessionId, userPrompt);
@@ -250,6 +329,65 @@ export async function runReview({ client, sessionManager, diff, mode = "standard
 		// 6. Update job with result
 		await sessionManager.updateSession(job.jobId, { status: "completed", result });
 		return result;
+	} catch (err) {
+		await sessionManager.updateSession(job.jobId, { status: "failed", error: err.message });
+		throw err;
+	}
+}
+
+/**
+ * Run a chunked code review via Copilot.
+ * Splits a large diff into chunks, reviews each in sequence with compaction
+ * between turns, and merges all results into a single ReviewResult.
+ *
+ * @param {object} params
+ * @param {object} params.client - CopilotReviewClient instance.
+ * @param {object} params.sessionManager - SessionManager instance.
+ * @param {string[]} params.chunks - Pre-split diff chunks from groupIntoChunks().
+ * @param {'standard'|'adversarial'} [params.mode='standard'] - Review mode.
+ * @param {object} [params.options] - Additional options.
+ * @param {(info: {chunk: number, total: number}) => void} [params.onProgress] - Progress callback.
+ * @returns {Promise<ReviewResult>}
+ */
+export async function runChunkedReview({
+	client,
+	sessionManager,
+	chunks,
+	mode = "standard",
+	options = {},
+	onProgress,
+}) {
+	const systemPrompt = await loadSystemPrompt(mode);
+
+	const job = await sessionManager.createReviewSession({
+		systemMessage: systemPrompt,
+		claudeSessionId: options.claudeSessionId,
+	});
+
+	await sessionManager.updateSession(job.jobId, { status: "running" });
+
+	try {
+		const chunkResults = [];
+
+		for (let i = 0; i < chunks.length; i++) {
+			if (onProgress) onProgress({ chunk: i + 1, total: chunks.length });
+
+			const result = await reviewOneChunk(client, job.sessionId, chunks[i], i, chunks.length);
+			chunkResults.push(result);
+
+			// Compact between chunks to free token budget (skip after last chunk)
+			if (i < chunks.length - 1) {
+				try {
+					await client.compact(job.sessionId);
+				} catch {
+					// Compaction is best-effort; continue without it
+				}
+			}
+		}
+
+		const merged = mergeReviewResults(chunkResults);
+		await sessionManager.updateSession(job.jobId, { status: "completed", result: merged });
+		return merged;
 	} catch (err) {
 		await sessionManager.updateSession(job.jobId, { status: "failed", error: err.message });
 		throw err;
