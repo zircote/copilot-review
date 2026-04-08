@@ -1,21 +1,30 @@
 {
-  "name": "copilot-review",
-  "version": "0.1.0",
-  "private": true,
-  "type": "module",
-  "description": "Use GitHub Copilot from Claude Code to review code or delegate tasks.",
-  "license": "MIT",
-  "engines": {
-    "node": ">=20.0.0"
-  },
-  "dependencies": {
-    "@github/copilot-sdk": "^0.2.1"
-  },
-  "devDependencies": {
-    "@types/node": "^22.0.0"
-  },
-  "scripts": {
-    "test": "node --test tests/*.test.mjs",
-    "test:coverage": "node --test --experimental-test-coverage tests/*.test.mjs"
-  }
+	"name": "copilot-review",
+	"version": "0.1.0",
+	"private": true,
+	"type": "module",
+	"description": "Use GitHub Copilot from Claude Code to review code or delegate tasks.",
+	"license": "MIT",
+	"engines": {
+		"node": ">=20.0.0"
+	},
+	"dependencies": {
+		"@github/copilot-sdk": "^0.2.1"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "^2.4.10",
+		"@commitlint/cli": "^20.5.0",
+		"@commitlint/config-conventional": "^20.5.0",
+		"@types/node": "^22.0.0",
+		"husky": "^9.1.7"
+	},
+	"scripts": {
+		"test": "node --test tests/*.test.mjs",
+		"test:coverage": "node --test --experimental-test-coverage tests/*.test.mjs",
+		"lint": "biome check .",
+		"lint:fix": "biome check --fix .",
+		"format": "biome format --write .",
+		"format:check": "biome format .",
+		"prepare": "husky"
+	}
 }

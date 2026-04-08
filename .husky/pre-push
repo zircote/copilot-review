@@ -1,0 +1,13 @@
+# Block WIP/fixup/squash commits from being pushed
+wip_commits=$(git log @{u}..HEAD --oneline 2>/dev/null | grep -iE '^[a-f0-9]+ (wip|fixup!|squash!)' || true)
+if [ -n "$wip_commits" ]; then
+  echo "❌ WIP/fixup/squash commits detected:"
+  echo "$wip_commits"
+  echo ""
+  echo "Squash or reword these before pushing."
+  echo "Bypass: git push --no-verify"
+  exit 1
+fi
+
+# Run tests
+npm test
