@@ -13,6 +13,55 @@ const execFile = promisify(execFileCb);
 /** Maximum diff size in bytes for single-shot review. */
 const MAX_DIFF_BYTES = 102400;
 
+/**
+ * @typedef {object} DiffRange
+ * @property {string} base - Base ref (SHA, branch, tag).
+ * @property {string} head - Head ref.
+ * @property {boolean} threeDot - True for merge-base diff (...), false for direct diff (..).
+ */
+
+/**
+ * Parse a git diff range string into base/head/style.
+ *
+ * Supported formats:
+ *  - `sha1...sha2`  → three-dot merge-base diff
+ *  - `sha1..sha2`   → two-dot direct diff
+ *  - `...sha2`      → HEAD...sha2
+ *  - `sha1...`      → sha1...HEAD
+ *  - `..sha2`       → HEAD..sha2
+ *  - `sha1..`       → sha1..HEAD
+ *  - `sha1`         → sha1...HEAD (bare ref, defaults to three-dot)
+ *
+ * @param {string} range - The range string.
+ * @returns {DiffRange|null} Parsed range or null if input is empty/falsy.
+ */
+export function parseDiffRange(range) {
+	if (!range) return null;
+
+	// Three-dot: sha1...sha2 (greedy base to handle dots in refs like v1.0.0)
+	const threeDotMatch = range.match(/^(.*)\.\.\.(.*)$/);
+	if (threeDotMatch) {
+		return {
+			base: threeDotMatch[1] || "HEAD",
+			head: threeDotMatch[2] || "HEAD",
+			threeDot: true,
+		};
+	}
+
+	// Two-dot: sha1..sha2 (greedy base to handle dots in refs)
+	const twoDotMatch = range.match(/^(.*)\.\.(.*)$/);
+	if (twoDotMatch) {
+		return {
+			base: twoDotMatch[1] || "HEAD",
+			head: twoDotMatch[2] || "HEAD",
+			threeDot: false,
+		};
+	}
+
+	// Bare ref: treat as ref...HEAD
+	return { base: range, head: "HEAD", threeDot: true };
+}
+
 /** Maximum bytes per chunk when splitting for chunked review. */
 const CHUNK_TARGET_BYTES = 81920;
 
@@ -28,14 +77,43 @@ export async function getGitRoot() {
 
 /**
  * Collect the raw git diff without truncation.
+ *
+ * Modes (checked in order):
+ *  1. `range`           → parsed DiffRange (from parseDiffRange), uses .. or ... as appropriate
+ *  2. `base` + `head`   → `git diff <base>...<head>`  (three-dot merge-base diff)
+ *  3. `base` only       → `git diff <base>...HEAD`
+ *  4. `staged`          → `git diff --staged`
+ *  5. default            → `git diff` (working-tree changes)
+ *
  * @param {object} [options]
  * @param {boolean} [options.staged=false] - If true, diff only staged changes.
+ * @param {string|null} [options.base=null] - Base ref for commit-range diff (tag, branch, SHA).
+ * @param {string|null} [options.head=null] - Head ref (defaults to HEAD when base is set).
+ * @param {DiffRange|null} [options.range=null] - Parsed diff range (from parseDiffRange).
  * @param {string[]|null} [options.files=null] - File patterns to restrict the diff.
  * @returns {Promise<string>} The full diff text.
  */
-export async function getRawDiff({ staged = false, files = null } = {}) {
+export async function getRawDiff({
+	staged = false,
+	base = null,
+	head = null,
+	range = null,
+	files = null,
+} = {}) {
 	const args = ["diff"];
-	if (staged) args.push("--staged");
+
+	if (range) {
+		// Use parsed range with correct dot notation
+		const sep = range.threeDot ? "..." : "..";
+		args.push(`${range.base}${sep}${range.head}`);
+	} else if (base) {
+		// Commit-range mode: three-dot diff shows changes since merge-base
+		const headRef = head || "HEAD";
+		args.push(`${base}...${headRef}`);
+	} else if (staged) {
+		args.push("--staged");
+	}
+
 	if (files && files.length > 0) {
 		args.push("--");
 		args.push(...files);
@@ -48,11 +126,20 @@ export async function getRawDiff({ staged = false, files = null } = {}) {
  * Collect a git diff, truncated for single-shot review.
  * @param {object} [options]
  * @param {boolean} [options.staged=false] - If true, diff only staged changes.
+ * @param {string|null} [options.base=null] - Base ref for commit-range diff.
+ * @param {string|null} [options.head=null] - Head ref (defaults to HEAD when base is set).
+ * @param {DiffRange|null} [options.range=null] - Parsed diff range (from parseDiffRange).
  * @param {string[]|null} [options.files=null] - File patterns to restrict the diff.
  * @returns {Promise<string>} The diff text, possibly truncated.
  */
-export async function getDiff({ staged = false, files = null } = {}) {
-	const stdout = await getRawDiff({ staged, files });
+export async function getDiff({
+	staged = false,
+	base = null,
+	head = null,
+	range = null,
+	files = null,
+} = {}) {
+	const stdout = await getRawDiff({ staged, base, head, range, files });
 	if (!stdout) return "";
 
 	const totalBytes = Buffer.byteLength(stdout, "utf-8");
@@ -138,6 +225,122 @@ export function groupIntoChunks(fileDiffs, targetBytes = CHUNK_TARGET_BYTES) {
  */
 export function needsChunking(diff) {
 	return Buffer.byteLength(diff, "utf-8") > MAX_DIFF_BYTES;
+}
+
+/**
+ * @typedef {object} RemoteInfo
+ * @property {string} owner - Repository owner (user or org).
+ * @property {string} repo - Repository name.
+ */
+
+/**
+ * Parse the GitHub owner/repo from the origin remote URL.
+ *
+ * Handles HTTPS (`https://github.com/owner/repo.git`) and
+ * SSH (`git@github.com:owner/repo.git`) formats.
+ *
+ * @param {string} [remote='origin'] - Git remote name.
+ * @returns {Promise<RemoteInfo>}
+ * @throws {Error} If the remote URL cannot be parsed.
+ */
+export async function getRemoteInfo(remote = "origin") {
+	const { stdout } = await execFile("git", ["remote", "get-url", remote]);
+	const url = stdout.trim();
+
+	// HTTPS: https://github.com/owner/repo.git
+	// SSH:   git@github.com:owner/repo.git
+	const match = url.match(/github\.com[:/]([^/]+)\/([^/.]+?)(?:\.git)?$/);
+	if (!match) {
+		throw new Error(`Cannot parse GitHub owner/repo from remote URL: ${url}`);
+	}
+
+	return { owner: match[1], repo: match[2] };
+}
+
+/**
+ * @typedef {object} PrRef
+ * @property {string|null} owner - Repository owner, or null to auto-detect.
+ * @property {string|null} repo - Repository name, or null to auto-detect.
+ * @property {number} number - The pull request number.
+ */
+
+/**
+ * Parse a pull request reference into its components.
+ *
+ * Supported formats:
+ *  - `42`                                    → PR #42 in the current repo
+ *  - `owner/repo#42`                         → PR #42 in owner/repo
+ *  - `https://github.com/owner/repo/pull/42` → PR #42 in owner/repo
+ *
+ * @param {string} ref - The PR reference string.
+ * @returns {PrRef|null} Parsed PR ref, or null if the format is unrecognised.
+ */
+export function parsePrRef(ref) {
+	if (!ref) return null;
+
+	// Full GitHub URL: https://github.com/owner/repo/pull/42
+	const urlMatch = ref.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
+	if (urlMatch) {
+		return {
+			owner: urlMatch[1],
+			repo: urlMatch[2],
+			number: Number.parseInt(urlMatch[3], 10),
+		};
+	}
+
+	// owner/repo#42
+	const nwoMatch = ref.match(/^([^/]+)\/([^#]+)#(\d+)$/);
+	if (nwoMatch) {
+		return {
+			owner: nwoMatch[1],
+			repo: nwoMatch[2],
+			number: Number.parseInt(nwoMatch[3], 10),
+		};
+	}
+
+	// Bare number: 42 or #42
+	const numMatch = ref.match(/^#?(\d+)$/);
+	if (numMatch) {
+		return {
+			owner: null,
+			repo: null,
+			number: Number.parseInt(numMatch[1], 10),
+		};
+	}
+
+	return null;
+}
+
+/**
+ * Fetch the diff for a GitHub pull request using `gh api`.
+ *
+ * @param {PrRef} prRef - Parsed PR reference (from parsePrRef).
+ * @returns {Promise<string>} The unified diff text.
+ * @throws {Error} If `gh` CLI is unavailable or the request fails.
+ */
+export async function getPrDiff(prRef) {
+	const owner = prRef.owner;
+	const repo = prRef.repo;
+	let resolvedOwner = owner;
+	let resolvedRepo = repo;
+
+	if (!resolvedOwner || !resolvedRepo) {
+		const remote = await getRemoteInfo();
+		resolvedOwner = resolvedOwner || remote.owner;
+		resolvedRepo = resolvedRepo || remote.repo;
+	}
+
+	const { stdout } = await execFile(
+		"gh",
+		[
+			"api",
+			`repos/${resolvedOwner}/${resolvedRepo}/pulls/${prRef.number}`,
+			"-H",
+			"Accept: application/vnd.github.diff",
+		],
+		{ maxBuffer: 50 * 1024 * 1024 },
+	);
+	return stdout || "";
 }
 
 /**

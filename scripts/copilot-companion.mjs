@@ -7,7 +7,15 @@
 
 import { parseArgs } from "./lib/args.mjs";
 import { AuthError, CopilotReviewClient, resolveToken } from "./lib/copilot-client.mjs";
-import { getRawDiff, groupIntoChunks, needsChunking, splitDiffByFile } from "./lib/git.mjs";
+import {
+	getPrDiff,
+	getRawDiff,
+	groupIntoChunks,
+	needsChunking,
+	parseDiffRange,
+	parsePrRef,
+	splitDiffByFile,
+} from "./lib/git.mjs";
 import { renderError, renderJobList, renderJobResult, renderReview } from "./lib/render.mjs";
 import { runChunkedReview, runReview } from "./lib/review.mjs";
 import { SessionManager } from "./lib/session-manager.mjs";
@@ -101,31 +109,52 @@ async function handleSetup(_flags) {
 
 /**
  * @param {Record<string, string|boolean>} flags
- * @param {string[]} _positionals
+ * @param {string[]} positionals
  */
-async function handleReview(flags, _positionals) {
-	await runReviewMode("standard", flags);
+async function handleReview(flags, positionals) {
+	await runReviewMode("standard", flags, positionals);
 }
 
 /**
  * @param {Record<string, string|boolean>} flags
- * @param {string[]} _positionals
+ * @param {string[]} positionals
  */
-async function handleAdversarialReview(flags, _positionals) {
-	await runReviewMode("adversarial", flags);
+async function handleAdversarialReview(flags, positionals) {
+	await runReviewMode("adversarial", flags, positionals);
 }
 
 /**
  * Shared logic for standard and adversarial review.
  * @param {'standard'|'adversarial'} mode
  * @param {Record<string, string|boolean>} flags
+ * @param {string[]} positionals
  */
-async function runReviewMode(mode, flags) {
+async function runReviewMode(mode, flags, positionals = []) {
 	const staged = flags.staged === true;
 	const files = typeof flags.files === "string" ? flags.files.split(",") : undefined;
+	const prFlag = typeof flags.pr === "string" ? flags.pr : null;
+	const prRef = parsePrRef(prFlag);
 
-	// Get the full diff first to check size
-	const rawDiff = await getRawDiff({ staged, files });
+	let rawDiff;
+
+	if (prRef) {
+		// PR mode: fetch diff from GitHub API via gh CLI
+		rawDiff = await getPrDiff(prRef);
+	} else if (prFlag) {
+		// --pr was given but couldn't be parsed
+		process.stderr.write(
+			`Invalid PR reference: ${prFlag}\n` +
+				"Accepted formats: 42, #42, owner/repo#42, https://github.com/owner/repo/pull/42\n",
+		);
+		process.exit(EXIT_USER_ERROR);
+	} else {
+		// Local diff modes: range positional, --base/--head, --staged, or working tree
+		const rangeArg = positionals[0] || null;
+		const range = parseDiffRange(rangeArg);
+		const base = range ? null : typeof flags.base === "string" ? flags.base : null;
+		const head = range ? null : typeof flags.head === "string" ? flags.head : null;
+		rawDiff = await getRawDiff({ staged, base, head, range, files });
+	}
 	if (!rawDiff) {
 		process.stdout.write("No changes to review.\n");
 		process.exit(EXIT_OK);
@@ -282,12 +311,29 @@ async function main() {
 				`Commands: ${cmds}\n\n` +
 				"Usage:\n" +
 				"  /copilot-review:setup              Verify auth configuration\n" +
-				"  /copilot-review:review [--staged]   Review current diff\n" +
+				"  /copilot-review:review [options]    Review current diff\n" +
 				"  /copilot-review:adversarial-review  Adversarial review mode\n" +
 				"  /copilot-review:task <prompt...>    Run a Copilot task\n" +
 				"  /copilot-review:status [--all]      List jobs\n" +
 				"  /copilot-review:result <job-id>     Show job result\n" +
-				"  /copilot-review:cancel <job-id>     Cancel a job\n",
+				"  /copilot-review:cancel <job-id>     Cancel a job\n\n" +
+				"Review options:\n" +
+				"  <range>              Diff range: sha1...sha2, sha1..sha2, ...sha2, sha1\n" +
+				"  --pr <ref>           Review a GitHub PR (42, owner/repo#42, or URL)\n" +
+				"  --staged             Review only staged changes\n" +
+				"  --base <ref>         Base ref for cold review (tag, branch, SHA)\n" +
+				"  --head <ref>         Head ref (default: HEAD)\n" +
+				"  --files <glob,...>    Restrict to specific files\n\n" +
+				"Examples:\n" +
+				"  /copilot-review:review --pr 42                 Review PR #42 in current repo\n" +
+				"  /copilot-review:review --pr owner/repo#42      Review PR #42 in owner/repo\n" +
+				"  /copilot-review:review abc123...def456         Three-dot range (merge-base)\n" +
+				"  /copilot-review:review abc123..def456          Two-dot range (direct diff)\n" +
+				"  /copilot-review:review ...feature-branch       Changes on feature-branch\n" +
+				"  /copilot-review:review v1.0.0                  Changes since v1.0.0\n" +
+				"  /copilot-review:review --base v1.0.0           Same, using flag syntax\n" +
+				"  /copilot-review:review --base main             Review branch vs main\n" +
+				"  /copilot-review:review --base abc123 --head def456  Review commit range\n",
 		);
 		process.exit(command ? EXIT_OK : EXIT_USER_ERROR);
 	}

@@ -84,6 +84,26 @@ When this happens:
 - GPT-4.1: Good JSON compliance but occasionally adds explanatory text around fences.
 - Both models benefit from the explicit "no text outside the fence" instruction in the system prompt.
 
+## Cold Reviews (Committed Code)
+
+Use `--base <ref>` to review already-committed code:
+
+```bash
+# Review all changes since a tag
+/copilot-review:review --base v1.0.0
+
+# Review branch changes vs main
+/copilot-review:review --base main
+
+# Review a specific commit range
+/copilot-review:review --base abc123 --head def456
+
+# Cold review scoped to specific files
+/copilot-review:adversarial-review --base main --files "src/**/*.js"
+```
+
+The `--base` flag uses `git diff <base>...<head>` (three-dot merge-base diff), which shows only the changes introduced since the branches diverged — the same diff you'd see in a PR.
+
 ## Limitations
 
 - **No incremental review**: Each review is a fresh session. Copilot doesn't carry context between reviews.
