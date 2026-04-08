@@ -75,7 +75,7 @@ When this happens:
 - Use `--files pattern` to scope to specific files
 
 ### For better finding quality:
-- Use adversarial mode (`/copilot-review adversarial-review`) for security-sensitive code
+- Use adversarial mode (`/copilot-review:adversarial-review`) for security-sensitive code
 - Standard mode is better for general code quality
 - Adversarial mode requires a minimum of 3 findings, which can surface subtle issues
 

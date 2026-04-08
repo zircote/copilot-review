@@ -201,7 +201,7 @@ describe('renderError', () => {
     const err = new Error('Invalid token');
     err.name = 'AuthError';
     const output = renderError(err);
-    assert.ok(output.includes('copilot-review setup'));
+    assert.ok(output.includes('copilot-review:setup'));
   });
 
   it('shows auto-remediation for CircuitBreakerError', () => {

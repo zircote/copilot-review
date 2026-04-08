@@ -65,4 +65,4 @@ node $CLAUDE_PLUGIN_ROOT/scripts/copilot-companion.mjs task "<description of wha
 - Review commands work on the current git diff — stage changes first if needed
 - Task commands accept free-form prompts for flexible investigation
 - Check job status with: `node $CLAUDE_PLUGIN_ROOT/scripts/copilot-companion.mjs status`
-- Copilot requires a valid GitHub token — run `/copilot-review setup` if auth fails
+- Copilot requires a valid GitHub token — run `/copilot-review:setup` if auth fails

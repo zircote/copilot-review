@@ -218,18 +218,13 @@ export async function runReview({ client, sessionManager, diff, mode = 'standard
   await sessionManager.updateSession(job.jobId, { status: 'running' });
 
   try {
-    // 4. Build user prompt and attachments
-    const userPrompt = 'Review the following diff:';
-    const attachments = [
-      {
-        name: 'review.diff',
-        data: Buffer.from(diff).toString('base64'),
-        mimeType: 'text/x-diff',
-      },
-    ];
+    // 4. Build user prompt with inline diff
+    // Note: Blob attachments are not supported by the Copilot CLI runtime.
+    // The diff is inlined in the prompt text inside a code fence.
+    const userPrompt = 'Review the following diff:\n\n```diff\n' + diff + '\n```';
 
     // 5. Send to Copilot (Layer 1 attempt)
-    const rawResponse = await client.send(job.sessionId, userPrompt, attachments);
+    const rawResponse = await client.send(job.sessionId, userPrompt);
 
     // Layer 1: Extract JSON from fence
     let result = tryParseResponse(rawResponse);

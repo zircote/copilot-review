@@ -255,13 +255,13 @@ async function main() {
       'copilot-review — Use GitHub Copilot to review code from Claude Code.\n\n' +
       `Commands: ${cmds}\n\n` +
       'Usage:\n' +
-      '  copilot-companion setup              Verify auth configuration\n' +
-      '  copilot-companion review [--staged]   Review current diff\n' +
-      '  copilot-companion adversarial-review  Adversarial review mode\n' +
-      '  copilot-companion task <prompt...>    Run a Copilot task\n' +
-      '  copilot-companion status [--all]      List jobs\n' +
-      '  copilot-companion result <job-id>     Show job result\n' +
-      '  copilot-companion cancel <job-id>     Cancel a job\n'
+      '  /copilot-review:setup              Verify auth configuration\n' +
+      '  /copilot-review:review [--staged]   Review current diff\n' +
+      '  /copilot-review:adversarial-review  Adversarial review mode\n' +
+      '  /copilot-review:task <prompt...>    Run a Copilot task\n' +
+      '  /copilot-review:status [--all]      List jobs\n' +
+      '  /copilot-review:result <job-id>     Show job result\n' +
+      '  /copilot-review:cancel <job-id>     Cancel a job\n'
     );
     process.exit(command ? EXIT_OK : EXIT_USER_ERROR);
   }
@@ -280,7 +280,7 @@ async function main() {
 main().catch(err => {
   if (err instanceof AuthError) {
     process.stderr.write(
-      `${err.message}\n\nRun "copilot-companion setup" for configuration help.\n`
+      `${err.message}\n\nRun "/copilot-review:setup" for configuration help.\n`
     );
     process.exit(EXIT_USER_ERROR);
   }

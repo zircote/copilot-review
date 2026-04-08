@@ -1,0 +1,144 @@
+{
+  "skill_name": "copilot-review-prompting",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I ran a copilot review and got this output:\n\n```json\n{\n  \"summary\": \"Several issues found\",\n  \"verdict\": \"request_changes\",\n  \"findings\": [\n    {\n      \"file\": \"src/auth.js\",\n      \"line\": 87,\n      \"severity\": \"critical\",\n      \"message\": \"SQL query is constructed via string concatenation — SQL injection risk\",\n      \"suggestion\": \"Use parameterized queries or a prepared statement\"\n    },\n    {\n      \"file\": \"src/auth.js\",\n      \"line\": 102,\n      \"severity\": \"nitpick\",\n      \"message\": \"Variable name 'x' is not descriptive\"\n    }\n  ]\n}\n```\n\nShould I merge this PR?",
+      "expected_output": "The assistant should advise NOT merging. It should identify the critical SQL injection finding as a must-fix blocker, explain the verdict 'request_changes' means blocking issues exist, and note the nitpick is informational only and non-blocking.",
+      "files": [],
+      "deterministic_checks": [],
+      "expectations": [
+        "Advises against merging the PR due to the critical finding",
+        "Correctly identifies the SQL injection issue at src/auth.js line 87 as the blocking reason — severity 'critical' means must fix before merge",
+        "Explains that 'request_changes' verdict means one or more critical/warning findings require attention",
+        "Notes the nitpick finding is informational only and not a merge blocker",
+        "Does not treat the nitpick as a required fix"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "My copilot review came back with this:\n\n```json\n{\n  \"summary\": \"Code looks good overall\",\n  \"verdict\": \"approve\",\n  \"findings\": [\n    {\n      \"file\": \"utils/format.ts\",\n      \"line\": 15,\n      \"severity\": \"suggestion\",\n      \"message\": \"Consider using Array.from() instead of spread operator for better readability\"\n    }\n  ]\n}\n```\n\nWhat does this mean and can I merge?",
+      "expected_output": "The assistant should confirm the PR is safe to merge. Verdict 'approve' means no critical or warning findings. The single 'suggestion' severity finding is a nice-to-have improvement, not a blocker. The user can merge and optionally address the suggestion in a follow-up.",
+      "files": [],
+      "deterministic_checks": [],
+      "expectations": [
+        "Confirms the PR can be merged — verdict 'approve' means it is ready",
+        "Explains that 'approve' means no critical or warning findings were found",
+        "Correctly characterizes the 'suggestion' severity as a style improvement that is nice to have but not blocking",
+        "Does not incorrectly escalate the suggestion to a required fix",
+        "Does not warn about merge risks that are not indicated by the review output"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "I got this message from the copilot review plugin: \"Copilot returned a prose review (structured JSON parsing failed).\" The review text says the code has some memory management issues and a possible null pointer. What happened and what should I do?",
+      "expected_output": "The assistant should explain the prose fallback (Layer 3) was triggered after JSON extraction and retry both failed. It should say the review content is still useful even unstructured. Recommend re-running the review since results vary. Ask about diff size — diffs over 100KB trigger truncation. Do NOT discard the finding about memory management and null pointer.",
+      "files": [],
+      "deterministic_checks": [],
+      "expectations": [
+        "Identifies this as the Layer 3 prose fallback — triggered when JSON fence extraction (Layer 1) and retry (Layer 2) both failed",
+        "States that the review content is still useful despite not being structured",
+        "Recommends re-running the review, noting that results may vary between runs",
+        "Mentions checking whether the diff is unusually large (over 100KB) as a possible cause",
+        "Does not dismiss the memory management and null pointer findings — advises treating them seriously even in prose form",
+        "Lists at least one other common cause of prose fallback (explanatory text around fences, truncation, or unusual diff content)"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "My PR touches 47 files and the diff is about 150KB. I keep getting prose fallback from the copilot review — the JSON never parses. How do I get structured reviews for this big PR?",
+      "expected_output": "The assistant should diagnose the >100KB diff truncation as the likely cause. Recommend using --files pattern to scope reviews to subsets of files (e.g., review a directory at a time). Also mention --staged to limit scope. Do NOT suggest increasing a token limit (no such option exists in the plugin). Explain that structured JSON output is more reliable on smaller focused diffs.",
+      "files": [],
+      "deterministic_checks": [],
+      "expectations": [
+        "Identifies the 150KB diff size as exceeding the 100KB truncation threshold, making truncation the likely cause",
+        "Recommends using --files pattern to scope reviews to specific files or directories, breaking the large PR into parts",
+        "Mentions that smaller focused diffs produce better structured output",
+        "Does not suggest a nonexistent 'increase token limit' or 'max diff size' option",
+        "Optionally mentions --staged as a way to limit scope to staged changes"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "When should I use adversarial-review mode vs standard review mode for copilot reviews?",
+      "expected_output": "The assistant should explain adversarial mode is designed for security-sensitive code and enforces a minimum of 3 findings to surface subtle issues. Standard mode is better for general code quality. The choice should be driven by the nature of the code being reviewed, not by the size of the diff.",
+      "files": [],
+      "deterministic_checks": [],
+      "expectations": [
+        "Recommends adversarial mode for security-sensitive code",
+        "States that adversarial mode requires a minimum of 3 findings, which helps surface subtle issues",
+        "States that standard mode is better for general code quality reviews",
+        "Does not conflate mode selection with diff size or performance concerns",
+        "Correctly attributes adversarial mode to the /copilot-review adversarial-review command"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "I ran the same PR through copilot review twice and got completely different verdicts — the first said 'approve' and the second said 'request_changes' with a warning about missing error handling. Which result should I trust?",
+      "expected_output": "The assistant should acknowledge that non-determinism is inherent to LLM-based reviews and expected behavior per the skill's documented limitations. Recommend treating the more conservative result (request_changes with a warning) seriously. Suggest re-running a third time to see if a pattern emerges. Do not tell the user to just pick the result they prefer.",
+      "files": [],
+      "deterministic_checks": [],
+      "expectations": [
+        "Acknowledges that non-deterministic results are a documented limitation of the plugin — the same diff can produce different reviews on subsequent runs",
+        "Advises taking the more conservative result (request_changes with missing error handling warning) seriously rather than ignoring it",
+        "Suggests running the review a third time to see if a consensus emerges",
+        "Does not tell the user to simply trust whichever result they prefer",
+        "Does not suggest the variation indicates a bug in the plugin"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "I'm getting reviews where Copilot adds a long explanation paragraph before and after the JSON fence. Layer 1 regex extraction fails because of it. How does the retry layer work and what will the final output look like if it also fails?",
+      "expected_output": "The assistant should explain Layer 2: the plugin sends a follow-up prompt demanding JSON-only output (no surrounding text). Maximum 1 retry. If Layer 2 also fails, Layer 3 produces a prose fallback — wraps the raw text as a single 'suggestion' finding with verdict 'comment' and includes the warning 'Copilot returned a prose review (structured JSON parsing failed).'",
+      "files": [],
+      "deterministic_checks": [],
+      "expectations": [
+        "Correctly describes Layer 2 as a follow-up prompt demanding JSON-only output",
+        "States the retry maximum is 1 (not multiple retries)",
+        "Correctly describes Layer 3 output: raw text wrapped as a single 'suggestion' finding with verdict 'comment'",
+        "States the warning message 'Copilot returned a prose review (structured JSON parsing failed)' appears in Layer 3 output",
+        "Notes that explanatory text around fences is a documented common cause of parsing failure"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "Does copilot review remember feedback from my previous review session? I ran it on the same file twice and want to know if the second run took the first run's context into account.",
+      "expected_output": "The assistant should clearly state that each review is a fresh session — Copilot does not carry context between reviews. This is a documented limitation. The second run had no knowledge of the first run's findings.",
+      "files": [],
+      "deterministic_checks": [],
+      "expectations": [
+        "Clearly states each review is a fresh session with no context from previous reviews",
+        "Identifies this as a documented limitation of the plugin, not a configuration issue",
+        "Does not suggest a way to pass prior review context between sessions (no such feature exists)",
+        "Accurately characterizes the behavior without overpromising future capabilities"
+      ]
+    },
+    {
+      "id": 9,
+      "prompt": "Here's a review result I got back:\n\n```json\n{\n  \"summary\": \"Some observations\",\n  \"verdict\": \"comment\",\n  \"findings\": [\n    {\n      \"file\": \"lib/cache.py\",\n      \"line\": 33,\n      \"severity\": \"suggestion\",\n      \"message\": \"LRU cache size could be made configurable via constructor param\"\n    },\n    {\n      \"file\": \"lib/cache.py\",\n      \"line\": 58,\n      \"severity\": \"nitpick\",\n      \"message\": \"Trailing whitespace on line\"\n    }\n  ]\n}\n```\n\nIs this blocking my merge?",
+      "expected_output": "The assistant should confirm this is NOT blocking. Verdict 'comment' means informational review with suggestions but no blocking issues. Both findings are non-blocking severity levels (suggestion and nitpick). The PR can merge.",
+      "files": [],
+      "deterministic_checks": [],
+      "expectations": [
+        "Confirms the PR is not blocked — verdict 'comment' means informational with no blocking issues",
+        "Correctly explains 'comment' verdict as distinct from 'request_changes'",
+        "Identifies both findings as non-blocking: 'suggestion' is nice-to-have and 'nitpick' is informational only",
+        "Does not conflate 'comment' verdict with 'approve' — it is correctly characterized as informational, not a full approval"
+      ]
+    },
+    {
+      "id": 10,
+      "prompt": "I'm reviewing a PR that changes authentication middleware, session token handling, and also some CSS tweaks for the admin panel. Should I run one big review or break it up?",
+      "expected_output": "The assistant should recommend breaking it up. Use --files to scope separate reviews: one for the security-sensitive auth/session code (suggesting adversarial mode given it's authentication) and a separate standard review for the CSS changes. Smaller focused diffs produce better structured output and more relevant findings.",
+      "files": [],
+      "deterministic_checks": [],
+      "expectations": [
+        "Recommends breaking the review into separate scoped runs rather than one large review",
+        "Suggests using --files to scope each review to the relevant files",
+        "Recommends adversarial mode for the authentication and session token code given it is security-sensitive",
+        "Recommends standard mode for the CSS/admin panel changes",
+        "Correctly reasons that smaller focused diffs produce better structured JSON output and higher quality findings"
+      ]
+    }
+  ]
+}

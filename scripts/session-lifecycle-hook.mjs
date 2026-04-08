@@ -56,7 +56,7 @@ function handleStart(ctx) {
     process.stderr.write(
       'copilot-review: No GitHub token found. ' +
       'Set COPILOT_GITHUB_TOKEN, GH_TOKEN, or GITHUB_TOKEN. ' +
-      'Run /copilot-review setup for help.\n'
+      'Run /copilot-review:setup for help.\n'
     );
   }
 }

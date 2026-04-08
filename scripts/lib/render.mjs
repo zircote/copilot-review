@@ -163,9 +163,9 @@ export function renderError(error, { remediation } = {}) {
 function getAutoRemediation(errorName) {
   switch (errorName) {
     case 'AuthError':
-      return 'Run /copilot-review setup to configure authentication.';
+      return 'Run /copilot-review:setup to configure authentication.';
     case 'CircuitBreakerError':
-      return 'Copilot is experiencing issues. Try /copilot-review cancel <job-id> and retry.';
+      return 'Copilot is experiencing issues. Try /copilot-review:cancel <job-id> and retry.';
     default:
       return undefined;
   }

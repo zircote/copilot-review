@@ -110,7 +110,7 @@ export class CopilotReviewClient {
     if (!this.#token) {
       throw new AuthError(
         'No GitHub token found. Set COPILOT_GITHUB_TOKEN, GH_TOKEN, or GITHUB_TOKEN. ' +
-        'Run /copilot-review setup for help.'
+        'Run /copilot-review:setup for help.'
       );
     }
     this.#model = model;
@@ -133,6 +133,11 @@ export class CopilotReviewClient {
 
   /**
    * Create a new session.
+   *
+   * Uses the SDK v0.2.x "customize" mode for systemMessage, which patches
+   * individual sections of the Copilot system prompt rather than replacing
+   * the whole thing (plain string systemMessage is ignored by the CLI runtime).
+   *
    * @param {{ systemMessage?: string, model?: string }} [opts]
    * @returns {Promise<{ sessionId: string, session: any }>}
    */
@@ -140,10 +145,24 @@ export class CopilotReviewClient {
     this.#requireClient();
     const sessionId = `review-${Date.now()}-${randomBytes(4).toString('hex')}`;
     const sessionOpts = {
-      ...(opts.systemMessage && { systemMessage: opts.systemMessage }),
       ...(opts.model || this.#model) && { model: opts.model || this.#model },
       onPermissionRequest: async () => ({ kind: 'approved' }),
     };
+
+    // Apply system message via customize mode (SDK v0.2.x)
+    if (opts.systemMessage) {
+      sessionOpts.systemMessage = {
+        mode: 'customize',
+        sections: {
+          identity: { action: 'replace', content: 'You are a code review tool. You analyze diffs and return structured JSON reviews.' },
+          custom_instructions: { action: 'replace', content: opts.systemMessage },
+          code_change_rules: { action: 'remove' },
+          tool_instructions: { action: 'remove' },
+          tool_efficiency: { action: 'remove' },
+        },
+      };
+    }
+
     const session = await this.#client.createSession(sessionOpts);
     this.#sessions.set(sessionId, session);
     this.#failures.set(sessionId, 0);
@@ -186,10 +205,18 @@ export class CopilotReviewClient {
   async send(sessionId, prompt, attachments = []) {
     this.#requireHealthy(sessionId);
     const session = this.#getSession(sessionId);
-    const content = this.#buildContent(prompt, attachments);
 
     try {
-      const response = await session.sendAndWait({ content });
+      // SDK v0.2.x: sendAndWait accepts { prompt, attachments? }
+      const sendOpts = { prompt };
+      if (attachments.length > 0) {
+        sendOpts.attachments = attachments.map(att => ({
+          type: 'blob',
+          data: att.data,
+          mimeType: att.mimeType ?? 'text/plain',
+        }));
+      }
+      const response = await session.sendAndWait(sendOpts);
       this.#failures.set(sessionId, 0);
       return this.#extractText(response);
     } catch (err) {
@@ -209,14 +236,21 @@ export class CopilotReviewClient {
   async sendStreaming(sessionId, prompt, attachments = [], onDelta) {
     this.#requireHealthy(sessionId);
     const session = this.#getSession(sessionId);
-    const content = this.#buildContent(prompt, attachments);
 
     if (onDelta) {
       session.on('assistant.message_delta', onDelta);
     }
 
     try {
-      const response = await session.sendAndWait({ content });
+      const sendOpts = { prompt };
+      if (attachments.length > 0) {
+        sendOpts.attachments = attachments.map(att => ({
+          type: 'blob',
+          data: att.data,
+          mimeType: att.mimeType ?? 'text/plain',
+        }));
+      }
+      const response = await session.sendAndWait(sendOpts);
       this.#failures.set(sessionId, 0);
       return this.#extractText(response);
     } catch (err) {
@@ -307,33 +341,17 @@ export class CopilotReviewClient {
   }
 
   /**
-   * Build the content array for sendAndWait.
-   * @param {string} prompt
-   * @param {{ name: string, data: string, mimeType?: string }[]} attachments
-   * @returns {any[]}
-   */
-  #buildContent(prompt, attachments) {
-    /** @type {any[]} */
-    const content = [{ type: 'text', text: prompt }];
-    for (const att of attachments) {
-      content.push({
-        type: 'blob',
-        name: att.name,
-        data: att.data,
-        mimeType: att.mimeType ?? 'text/plain',
-      });
-    }
-    return content;
-  }
-
-  /**
    * Extract text from a Copilot SDK response.
+   * The SDK returns: { type: 'assistant.message', data: { content: string } }
    * @param {any} response
    * @returns {string}
    */
   #extractText(response) {
     if (typeof response === 'string') return response;
-    if (response?.content) {
+    // SDK v0.2.x: response.data.content is the text
+    if (typeof response?.data?.content === 'string') return response.data.content;
+    // Fallback: array of content parts
+    if (Array.isArray(response?.content)) {
       const textParts = response.content
         .filter(/** @param {any} c */ c => c.type === 'text')
         .map(/** @param {any} c */ c => c.text);
