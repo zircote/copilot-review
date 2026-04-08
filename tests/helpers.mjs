@@ -5,12 +5,10 @@
  * createTempDir(), cleanupTempDir().
  */
 
-import { readFile } from 'node:fs/promises';
-import { mkdtemp, rm } from 'node:fs/promises';
-import { join } from 'node:path';
-import { tmpdir } from 'node:os';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -21,32 +19,32 @@ const __dirname = dirname(__filename);
  * @returns {{ sendAndWait: Function, abort: Function, compaction: { compact: Function }, on: Function, off: Function }}
  */
 export function createMockSession(responses = []) {
-  let callIndex = 0;
-  const listeners = new Map();
+	let callIndex = 0;
+	const listeners = new Map();
 
-  return {
-    async sendAndWait({ content } = {}) {
-      if (callIndex < responses.length) {
-        return responses[callIndex++];
-      }
-      return '';
-    },
-    async abort() {},
-    compaction: {
-      async compact() {},
-    },
-    on(event, handler) {
-      if (!listeners.has(event)) listeners.set(event, []);
-      listeners.get(event).push(handler);
-    },
-    off(event, handler) {
-      const handlers = listeners.get(event);
-      if (handlers) {
-        const idx = handlers.indexOf(handler);
-        if (idx !== -1) handlers.splice(idx, 1);
-      }
-    },
-  };
+	return {
+		async sendAndWait({ content } = {}) {
+			if (callIndex < responses.length) {
+				return responses[callIndex++];
+			}
+			return "";
+		},
+		async abort() {},
+		compaction: {
+			async compact() {},
+		},
+		on(event, handler) {
+			if (!listeners.has(event)) listeners.set(event, []);
+			listeners.get(event).push(handler);
+		},
+		off(event, handler) {
+			const handlers = listeners.get(event);
+			if (handlers) {
+				const idx = handlers.indexOf(handler);
+				if (idx !== -1) handlers.splice(idx, 1);
+			}
+		},
+	};
 }
 
 /**
@@ -55,15 +53,15 @@ export function createMockSession(responses = []) {
  * @returns {{ start: Function, createSession: Function, stop: Function }}
  */
 export function createMockSDKClient(opts = {}) {
-  const session = opts.session || createMockSession();
+	const session = opts.session || createMockSession();
 
-  return {
-    async start() {},
-    async createSession(_sessionOpts) {
-      return session;
-    },
-    async stop() {},
-  };
+	return {
+		async start() {},
+		async createSession(_sessionOpts) {
+			return session;
+		},
+		async stop() {},
+	};
 }
 
 /**
@@ -72,17 +70,17 @@ export function createMockSDKClient(opts = {}) {
  * @returns {object}
  */
 export function createMockClient(overrides = {}) {
-  let sessionCounter = 0;
-  return {
-    createSession: async () => ({
-      sessionId: `mock-session-${++sessionCounter}`,
-      session: createMockSession(),
-    }),
-    resumeSession: (id) => ({ sessionId: id, session: {} }),
-    abort: async () => {},
-    stop: async () => [],
-    ...overrides,
-  };
+	let sessionCounter = 0;
+	return {
+		createSession: async () => ({
+			sessionId: `mock-session-${++sessionCounter}`,
+			session: createMockSession(),
+		}),
+		resumeSession: (id) => ({ sessionId: id, session: {} }),
+		abort: async () => {},
+		stop: async () => [],
+		...overrides,
+	};
 }
 
 /**
@@ -91,8 +89,8 @@ export function createMockClient(overrides = {}) {
  * @returns {Promise<string>}
  */
 export async function loadFixture(name) {
-  const filePath = resolve(__dirname, 'fixtures', name);
-  return readFile(filePath, 'utf-8');
+	const filePath = resolve(__dirname, "fixtures", name);
+	return readFile(filePath, "utf-8");
 }
 
 /**
@@ -100,7 +98,7 @@ export async function loadFixture(name) {
  * @returns {Promise<string>} The temp directory path.
  */
 export async function createTempDir() {
-  return mkdtemp(join(tmpdir(), 'copilot-review-test-'));
+	return mkdtemp(join(tmpdir(), "copilot-review-test-"));
 }
 
 /**
@@ -109,5 +107,5 @@ export async function createTempDir() {
  * @returns {Promise<void>}
  */
 export async function cleanupTempDir(dir) {
-  await rm(dir, { recursive: true, force: true });
+	await rm(dir, { recursive: true, force: true });
 }

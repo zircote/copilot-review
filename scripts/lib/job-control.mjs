@@ -17,16 +17,16 @@
  * @returns {string} e.g. "5s ago", "2m ago", "3h ago", "1d ago"
  */
 export function formatRelativeTime(isoString) {
-  const diffMs = Date.now() - new Date(isoString).getTime();
-  const diffSec = Math.max(0, Math.floor(diffMs / 1000));
+	const diffMs = Date.now() - new Date(isoString).getTime();
+	const diffSec = Math.max(0, Math.floor(diffMs / 1000));
 
-  if (diffSec < 60) return `${diffSec}s ago`;
-  const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `${diffHr}h ago`;
-  const diffDay = Math.floor(diffHr / 24);
-  return `${diffDay}d ago`;
+	if (diffSec < 60) return `${diffSec}s ago`;
+	const diffMin = Math.floor(diffSec / 60);
+	if (diffMin < 60) return `${diffMin}m ago`;
+	const diffHr = Math.floor(diffMin / 60);
+	if (diffHr < 24) return `${diffHr}h ago`;
+	const diffDay = Math.floor(diffHr / 24);
+	return `${diffDay}d ago`;
 }
 
 /**
@@ -36,21 +36,21 @@ export function formatRelativeTime(isoString) {
  * @returns {string} e.g. "15s", "2m 30s", "1h 5m"
  */
 export function formatDuration(startIso, endIso) {
-  const diffMs = new Date(endIso).getTime() - new Date(startIso).getTime();
-  const totalSec = Math.max(0, Math.floor(diffMs / 1000));
+	const diffMs = new Date(endIso).getTime() - new Date(startIso).getTime();
+	const totalSec = Math.max(0, Math.floor(diffMs / 1000));
 
-  if (totalSec < 60) return `${totalSec}s`;
+	if (totalSec < 60) return `${totalSec}s`;
 
-  const min = Math.floor(totalSec / 60);
-  const sec = totalSec % 60;
+	const min = Math.floor(totalSec / 60);
+	const sec = totalSec % 60;
 
-  if (min < 60) {
-    return sec > 0 ? `${min}m ${sec}s` : `${min}m`;
-  }
+	if (min < 60) {
+		return sec > 0 ? `${min}m ${sec}s` : `${min}m`;
+	}
 
-  const hr = Math.floor(min / 60);
-  const remainMin = min % 60;
-  return remainMin > 0 ? `${hr}h ${remainMin}m` : `${hr}h`;
+	const hr = Math.floor(min / 60);
+	const remainMin = min % 60;
+	return remainMin > 0 ? `${hr}h ${remainMin}m` : `${hr}h`;
 }
 
 /**
@@ -60,12 +60,12 @@ export function formatDuration(startIso, endIso) {
  * @returns {JobRecord[]}
  */
 export function filterJobs(jobs, { claudeSessionId, status, type } = {}) {
-  return jobs.filter(job => {
-    if (claudeSessionId && job.claudeSessionId !== claudeSessionId) return false;
-    if (status && job.status !== status) return false;
-    if (type && job.type !== type) return false;
-    return true;
-  });
+	return jobs.filter((job) => {
+		if (claudeSessionId && job.claudeSessionId !== claudeSessionId) return false;
+		if (status && job.status !== status) return false;
+		if (type && job.type !== type) return false;
+		return true;
+	});
 }
 
 /**
@@ -74,16 +74,17 @@ export function filterJobs(jobs, { claudeSessionId, status, type } = {}) {
  * @returns {EnrichedJobRecord}
  */
 export function enrichJob(job) {
-  const age = formatRelativeTime(job.createdAt);
+	const age = formatRelativeTime(job.createdAt);
 
-  const terminalStatuses = ['completed', 'failed', 'cancelled'];
-  const duration = terminalStatuses.includes(job.status) && job.updatedAt
-    ? formatDuration(job.createdAt, job.updatedAt)
-    : null;
+	const terminalStatuses = ["completed", "failed", "cancelled"];
+	const duration =
+		terminalStatuses.includes(job.status) && job.updatedAt
+			? formatDuration(job.createdAt, job.updatedAt)
+			: null;
 
-  const shortId = job.jobId.slice(0, 16);
+	const shortId = job.jobId.slice(0, 16);
 
-  return { ...job, age, duration, shortId };
+	return { ...job, age, duration, shortId };
 }
 
 /**
@@ -92,15 +93,15 @@ export function enrichJob(job) {
  * @param {{ by?: string, order?: 'asc'|'desc' }} [options]
  * @returns {JobRecord[]}
  */
-export function sortJobs(jobs, { by = 'createdAt', order = 'desc' } = {}) {
-  const sorted = [...jobs].sort((a, b) => {
-    const aVal = a[by];
-    const bVal = b[by];
-    if (aVal < bVal) return -1;
-    if (aVal > bVal) return 1;
-    return 0;
-  });
+export function sortJobs(jobs, { by = "createdAt", order = "desc" } = {}) {
+	const sorted = [...jobs].sort((a, b) => {
+		const aVal = a[by];
+		const bVal = b[by];
+		if (aVal < bVal) return -1;
+		if (aVal > bVal) return 1;
+		return 0;
+	});
 
-  if (order === 'desc') sorted.reverse();
-  return sorted;
+	if (order === "desc") sorted.reverse();
+	return sorted;
 }

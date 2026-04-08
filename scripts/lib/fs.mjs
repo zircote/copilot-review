@@ -4,9 +4,9 @@
  * Provides: ensureDir(), readJSON(), writeJSON(), resolvePluginPath().
  */
 
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -17,7 +17,7 @@ const __dirname = dirname(__filename);
  * @returns {Promise<void>}
  */
 export async function ensureDir(dirPath) {
-  await mkdir(dirPath, { recursive: true });
+	await mkdir(dirPath, { recursive: true });
 }
 
 /**
@@ -26,13 +26,13 @@ export async function ensureDir(dirPath) {
  * @returns {Promise<object|null>}
  */
 export async function readJSON(filePath) {
-  try {
-    const raw = await readFile(filePath, 'utf-8');
-    return JSON.parse(raw);
-  } catch (err) {
-    if (err.code === 'ENOENT') return null;
-    throw err;
-  }
+	try {
+		const raw = await readFile(filePath, "utf-8");
+		return JSON.parse(raw);
+	} catch (err) {
+		if (err.code === "ENOENT") return null;
+		throw err;
+	}
 }
 
 /**
@@ -42,8 +42,8 @@ export async function readJSON(filePath) {
  * @returns {Promise<void>}
  */
 export async function writeJSON(filePath, data) {
-  await ensureDir(dirname(filePath));
-  await writeFile(filePath, JSON.stringify(data, null, 2) + '\n', 'utf-8');
+	await ensureDir(dirname(filePath));
+	await writeFile(filePath, JSON.stringify(data, null, 2) + "\n", "utf-8");
 }
 
 /**
@@ -54,6 +54,6 @@ export async function writeJSON(filePath, data) {
  * @returns {string}
  */
 export function resolvePluginPath(relative) {
-  const root = process.env.CLAUDE_PLUGIN_ROOT || resolve(__dirname, '..', '..');
-  return resolve(root, relative);
+	const root = process.env.CLAUDE_PLUGIN_ROOT || resolve(__dirname, "..", "..");
+	return resolve(root, relative);
 }

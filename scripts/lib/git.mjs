@@ -5,8 +5,8 @@
  * Uses execFile (not exec) to avoid shell injection.
  */
 
-import { execFile as execFileCb } from 'node:child_process';
-import { promisify } from 'node:util';
+import { execFile as execFileCb } from "node:child_process";
+import { promisify } from "node:util";
 
 const execFile = promisify(execFileCb);
 
@@ -19,8 +19,8 @@ const MAX_DIFF_BYTES = 102400;
  * @throws {Error} If not inside a git repository.
  */
 export async function getGitRoot() {
-  const { stdout } = await execFile('git', ['rev-parse', '--show-toplevel']);
-  return stdout.trim();
+	const { stdout } = await execFile("git", ["rev-parse", "--show-toplevel"]);
+	return stdout.trim();
 }
 
 /**
@@ -31,23 +31,23 @@ export async function getGitRoot() {
  * @returns {Promise<string>} The diff text, possibly truncated.
  */
 export async function getDiff({ staged = false, files = null } = {}) {
-  const args = ['diff'];
-  if (staged) args.push('--staged');
-  if (files && files.length > 0) {
-    args.push('--');
-    args.push(...files);
-  }
+	const args = ["diff"];
+	if (staged) args.push("--staged");
+	if (files && files.length > 0) {
+		args.push("--");
+		args.push(...files);
+	}
 
-  const { stdout } = await execFile('git', args, { maxBuffer: 10 * 1024 * 1024 });
+	const { stdout } = await execFile("git", args, { maxBuffer: 10 * 1024 * 1024 });
 
-  if (!stdout) return '';
+	if (!stdout) return "";
 
-  const totalBytes = Buffer.byteLength(stdout, 'utf-8');
-  if (totalBytes <= MAX_DIFF_BYTES) return stdout;
+	const totalBytes = Buffer.byteLength(stdout, "utf-8");
+	if (totalBytes <= MAX_DIFF_BYTES) return stdout;
 
-  const totalKB = Math.round(totalBytes / 1024);
-  const truncated = Buffer.from(stdout, 'utf-8').subarray(0, MAX_DIFF_BYTES).toString('utf-8');
-  return truncated + `\n\n[DIFF TRUNCATED: showing first 100KB of ${totalKB}KB]`;
+	const totalKB = Math.round(totalBytes / 1024);
+	const truncated = Buffer.from(stdout, "utf-8").subarray(0, MAX_DIFF_BYTES).toString("utf-8");
+	return truncated + `\n\n[DIFF TRUNCATED: showing first 100KB of ${totalKB}KB]`;
 }
 
 /**
@@ -55,7 +55,7 @@ export async function getDiff({ staged = false, files = null } = {}) {
  * @returns {Promise<string[]>} Array of staged file paths (relative to repo root).
  */
 export async function getStagedFiles() {
-  const { stdout } = await execFile('git', ['diff', '--staged', '--name-only']);
-  if (!stdout.trim()) return [];
-  return stdout.trim().split('\n');
+	const { stdout } = await execFile("git", ["diff", "--staged", "--name-only"]);
+	if (!stdout.trim()) return [];
+	return stdout.trim().split("\n");
 }
