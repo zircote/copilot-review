@@ -139,7 +139,28 @@ async function runReviewMode(mode, flags, positionals = []) {
 
 	if (prRef) {
 		// PR mode: fetch diff from GitHub API via gh CLI
-		rawDiff = await getPrDiff(prRef);
+		try {
+			rawDiff = await getPrDiff(prRef);
+		} catch (err) {
+			const msg = err.stderr || err.message || String(err);
+			if (msg.includes("ENOENT")) {
+				process.stderr.write(
+					"gh CLI not found. Install from https://cli.github.com and run `gh auth login`.\n",
+				);
+			} else if (msg.includes("404")) {
+				const label = prRef.owner
+					? `${prRef.owner}/${prRef.repo}#${prRef.number}`
+					: `#${prRef.number}`;
+				process.stderr.write(`Pull request ${label} not found.\n`);
+			} else if (msg.includes("401") || msg.includes("auth")) {
+				process.stderr.write(
+					`GitHub authentication failed. Run \`gh auth login\` to re-authenticate.\n`,
+				);
+			} else {
+				process.stderr.write(`Failed to fetch PR diff: ${msg}\n`);
+			}
+			process.exit(EXIT_USER_ERROR);
+		}
 	} else if (prFlag) {
 		// --pr was given but couldn't be parsed
 		process.stderr.write(
@@ -153,7 +174,18 @@ async function runReviewMode(mode, flags, positionals = []) {
 		const range = parseDiffRange(rangeArg);
 		const base = range ? null : typeof flags.base === "string" ? flags.base : null;
 		const head = range ? null : typeof flags.head === "string" ? flags.head : null;
-		rawDiff = await getRawDiff({ staged, base, head, range, files });
+		try {
+			rawDiff = await getRawDiff({ staged, base, head, range, files });
+		} catch (err) {
+			const msg = err.stderr || err.message || String(err);
+			const ref = rangeArg || base || head || "";
+			if (msg.includes("unknown revision") || msg.includes("bad revision")) {
+				process.stderr.write(`Unknown git revision: ${ref}\n`);
+			} else {
+				process.stderr.write(`Failed to get diff: ${msg}\n`);
+			}
+			process.exit(EXIT_USER_ERROR);
+		}
 	}
 	if (!rawDiff) {
 		process.stdout.write("No changes to review.\n");
