@@ -1,0 +1,13 @@
+```json
+{
+  "summary": "Found issues.",
+  "verdict": "request_changes",
+  "findings": [
+    {
+      "file": "app.js",
+      "severity": "critical",
+      "message": "SQL injection vulnerability.",
+    },
+  ],
+}
+```

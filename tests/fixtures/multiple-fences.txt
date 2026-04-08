@@ -1,0 +1,17 @@
+```json
+{
+  "summary": "First review.",
+  "verdict": "approve",
+  "findings": []
+}
+```
+
+Actually, let me revise:
+
+```json
+{
+  "summary": "Revised review.",
+  "verdict": "request_changes",
+  "findings": [{"file": "a.js", "severity": "critical", "message": "Bug found."}]
+}
+```

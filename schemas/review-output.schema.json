@@ -1,0 +1,47 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["summary", "findings", "verdict"],
+  "properties": {
+    "summary": {
+      "type": "string",
+      "description": "High-level summary of the review findings."
+    },
+    "verdict": {
+      "enum": ["approve", "request_changes", "comment"],
+      "description": "Overall review verdict."
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["file", "severity", "message"],
+        "properties": {
+          "file": {
+            "type": "string",
+            "description": "File path relative to repository root."
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Line number in the file (optional)."
+          },
+          "severity": {
+            "enum": ["critical", "warning", "suggestion", "nitpick"],
+            "description": "Severity level of the finding."
+          },
+          "message": {
+            "type": "string",
+            "description": "Description of the issue found."
+          },
+          "suggestion": {
+            "type": "string",
+            "description": "Suggested fix or improvement (optional)."
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

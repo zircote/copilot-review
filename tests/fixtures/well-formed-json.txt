@@ -1,0 +1,15 @@
+```json
+{
+  "summary": "Clean code with minor suggestions.",
+  "verdict": "comment",
+  "findings": [
+    {
+      "file": "src/index.js",
+      "line": 10,
+      "severity": "suggestion",
+      "message": "Consider using const instead of let.",
+      "suggestion": "const x = 42;"
+    }
+  ]
+}
+```

@@ -1,0 +1,18 @@
+Here is my review of the changes:
+
+```json
+{
+  "summary": "Several issues found.",
+  "verdict": "request_changes",
+  "findings": [
+    {
+      "file": "server.js",
+      "line": 25,
+      "severity": "warning",
+      "message": "Missing error handling."
+    }
+  ]
+}
+```
+
+Let me know if you have questions.
