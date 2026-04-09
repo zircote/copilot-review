@@ -8,6 +8,7 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "./lib/args.mjs";
+import { getConfig, resolveWorkspaceRoot, setConfig } from "./lib/config.mjs";
 import { AuthError, CopilotReviewClient, resolveToken } from "./lib/copilot-client.mjs";
 import {
 	getPrDiff,
@@ -105,8 +106,8 @@ const COMMANDS = {
 // Handlers
 // ---------------------------------------------------------------------------
 
-/** @param {Record<string, string|boolean>} _flags */
-async function handleSetup(_flags) {
+/** @param {Record<string, string|boolean>} flags */
+async function handleSetup(flags) {
 	const token = resolveToken();
 	if (!token) {
 		process.stdout.write(
@@ -130,6 +131,28 @@ async function handleSetup(_flags) {
 	} catch (err) {
 		process.stdout.write(`Copilot SDK connection: FAILED — ${err.message}\n`);
 		process.exit(EXIT_SDK_ERROR);
+	}
+
+	// Review gate configuration
+	const workspaceRoot = resolveWorkspaceRoot(process.env.CLAUDE_PROJECT_DIR || process.cwd());
+	const enableGate = flags["enable-review-gate"] === true;
+	const disableGate = flags["disable-review-gate"] === true;
+
+	if (enableGate && disableGate) {
+		process.stderr.write("Cannot use --enable-review-gate and --disable-review-gate together.\n");
+		process.exit(EXIT_USER_ERROR);
+	}
+
+	if (enableGate) {
+		setConfig(workspaceRoot, "stopReviewGate", true);
+		process.stdout.write("Stop review gate: ENABLED\n");
+	} else if (disableGate) {
+		setConfig(workspaceRoot, "stopReviewGate", false);
+		process.stdout.write("Stop review gate: DISABLED\n");
+	} else {
+		const config = getConfig(workspaceRoot);
+		const status = config.stopReviewGate ? "enabled" : "disabled";
+		process.stdout.write(`Stop review gate: ${status}\n`);
 	}
 }
 
@@ -338,7 +361,8 @@ async function runReviewMode(mode, flags, positionals = []) {
  * @param {Record<string, string|boolean>} flags
  * @param {string[]} positionals
  */
-async function handleTask(_flags, positionals) {
+async function handleTask(flags, positionals) {
+	const jsonOutput = flags.json === true;
 	const prompt = positionals.join(" ");
 	if (!prompt) {
 		process.stderr.write("Usage: copilot-companion task <prompt...>\n");
@@ -358,7 +382,11 @@ async function handleTask(_flags, positionals) {
 		const responseText = await client.send(job.sessionId, prompt);
 		await sessionManager.updateSession(job.jobId, { status: "completed", result: responseText });
 
-		process.stdout.write(`Job: ${job.jobId}\n\n${responseText}\n`);
+		if (jsonOutput) {
+			process.stdout.write(`${JSON.stringify({ jobId: job.jobId, rawOutput: responseText })}\n`);
+		} else {
+			process.stdout.write(`Job: ${job.jobId}\n\n${responseText}\n`);
+		}
 	} catch (err) {
 		process.stderr.write(`Task failed: ${err.message}\n`);
 		process.exit(EXIT_SDK_ERROR);
