@@ -182,7 +182,9 @@ async function runReviewMode(mode, flags, positionals = []) {
 	const background = flags.background === true;
 	const bgJobId = typeof flags["_bg-jobid"] === "string" ? flags["_bg-jobid"] : null;
 
-	// --background: create a pending job, spawn detached child, exit immediately
+	// --background: create a pending job, spawn detached child, exit immediately.
+	// The caller (slash command template) is responsible for waiting on the
+	// job file via Monitor and then invoking `/copilot-review:result <jobId>`.
 	if (background) {
 		const dataDir = getDataDir();
 		const jobId = `bg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -196,8 +198,11 @@ async function runReviewMode(mode, flags, positionals = []) {
 		});
 
 		spawnBackground(jobId, process.argv.slice(2));
+		const jobFile = `${dataDir}/jobs/${jobId}.json`;
 		process.stdout.write(
-			`Background review started: ${jobId}\nCheck progress: /copilot-review:status\nGet results:   /copilot-review:result ${jobId}\n`,
+			`Background review started: ${jobId}\n` +
+				`Job file: ${jobFile}\n` +
+				`Wait with Monitor until status is terminal, then run /copilot-review:result ${jobId}.\n`,
 		);
 		process.exit(EXIT_OK);
 	}
